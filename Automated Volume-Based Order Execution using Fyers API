@@ -1,0 +1,536 @@
+# @title
+# Installing necessary fyers api v3
+# !pip install fyers-apiv
+!pip install fyers-apiv3
+
+import requests
+from fyers_apiv3 import fyersModel
+import webbrowser
+from fyers_apiv3.FyersWebsocket import data_ws
+import datetime as dt
+import time
+import json
+import pandas as pd
+from datetime import datetime, timezone, timedelta
+
+
+redirect_uri= "https://myapi.fyers.in/Inquisito"  ## redircet_uri you entered while creating APP.
+client_id = "GNSH4SCJGR-100"                                          ## Client_id here refers to APP_ID of the created app
+secret_key = "4QBHMB92QM"                                           ## app_secret key which you got after creating the app
+grant_type = "authorization_code"                  ## The grant_type always has to be "authorization_code"
+response_type = "code"                             ## The response_type always has to be "code"
+state = "sample"
+
+appSession = fyersModel.SessionModel(
+    client_id=client_id,
+    redirect_uri=redirect_uri,
+    response_type=response_type,
+    state=state,
+    secret_key=secret_key,
+    grant_type=grant_type
+)
+
+generateTokenUrl = appSession.generate_authcode()
+print(generateTokenUrl)
+
+webbrowser.open(generateTokenUrl, new=1)
+
+auth_code = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJhcGkubG9naW4uZnllcnMuaW4iLCJpYXQiOjE3MjQ4NjAxMzUsImV4cCI6MTcyNDg5MDEzNSwibmJmIjoxNzI0ODU5NTM1LCJhdWQiOiJbXCJ4OjBcIiwgXCJ4OjFcIiwgXCJ4OjJcIiwgXCJkOjFcIiwgXCJkOjJcIiwgXCJ4OjFcIiwgXCJ4OjBcIl0iLCJzdWIiOiJhdXRoX2NvZGUiLCJkaXNwbGF5X25hbWUiOiJYVjEzNjk2Iiwib21zIjoiSzEiLCJoc21fa2V5IjoiZTFlYTllYmU1ZWY2MWM4NjM1YjgzY2IxZGEzMTdiN2JkN2VhZmMzNjI4Y2Q0NWM2MWFiYjhhNmYiLCJub25jZSI6IiIsImFwcF9pZCI6IkdOU0g0U0NKR1IiLCJ1dWlkIjoiMmEwZGQxNWZkZDljNGNmMWIxMGRjOTBhOWQwNTRlZGYiLCJpcEFkZHIiOiIwLjAuMC4wIiwic2NvcGUiOiIifQ.TPCKPCmuLrF-2nbz0HY_6WZJC8Uj6ZrcVzsrzDPuKNQ"
+appSession.set_token(auth_code)
+
+response = appSession.generate_token()
+try:
+    access_token = response["access_token"]
+    print(f"Access token: {access_token}")
+except Exception as e:
+    print("Error:", e)
+
+log_path = "/content/sample_data"
+
+fyers = fyersModel.FyersModel(token=access_token,is_async=False,client_id=client_id,log_path=log_path) # Changed log path to a valid directory. Make sure to replace 'user' with your username
+
+# Get user profile dataa
+profile_data = fyers.get_profile()
+print("Profile data:", profile_data)
+
+nifty_50_symbols = [
+"NSE:BAJAJ-AUTO-EQ",
+"NSE:COALINDIA-EQ",
+"NSE:BHARTIARTL-EQ",
+"NSE:TATAMOTORS-EQ",
+"NSE:SUNPHARMA-EQ",
+"NSE:ICICIBANK-EQ",
+"NSE:BAJAJFINSV-EQ",
+"NSE:M&M-EQ",
+"NSE:HEROMOTOCO-EQ",
+"NSE:BPCL-EQ",
+"NSE:JSWSTEEL-EQ",
+"NSE:POWERGRID-EQ",
+"NSE:HINDUNILVR-EQ",
+"NSE:ULTRACEMCO-EQ",
+"NSE:INDUSINDBK-EQ",
+"NSE:ADANIPORTS-EQ",
+"NSE:ITC-EQ",
+"NSE:APOLLOHOSP-EQ",
+"NSE:HDFCLIFE-EQ",
+"NSE:TATASTEEL-EQ",
+"NSE:NTPC-EQ",
+"NSE:RELIANCE-EQ",
+"NSE:MARUTI-EQ",
+"NSE:HINDALCO-EQ",
+"NSE:KOTAKBANK-EQ",
+"NSE:BAJFINANCE-EQ",
+"NSE:SBILIFE-EQ",
+"NSE:AXISBANK-EQ",
+"NSE:TECHM-EQ",
+"NSE:LT-EQ",
+"NSE:HDFCBANK-EQ",
+"NSE:DRREDDY-EQ",
+"NSE:NESTLEIND-EQ",
+"NSE:GRASIM-EQ",
+"NSE:SHRIRAMFIN-EQ",
+"NSE:SBIN-EQ",
+"NSE:CIPLA-EQ",
+"NSE:ADANIENT-EQ",
+"NSE:TCS-EQ",
+"NSE:EICHERMOT-EQ",
+"NSE:INFY-EQ",
+"NSE:HCLTECH-EQ",
+"NSE:TATACONSUM-EQ",
+"NSE:BRITANNIA-EQ",
+"NSE:DIVISLAB-EQ",
+"NSE:TITAN-EQ",
+"NSE:ASIANPAINT-EQ",
+"NSE:ONGC-EQ",
+"NSE:WIPRO-EQ",
+"NSE:LTIM-EQ"]
+
+## Backtesting the strategy 
+def convert_to_ist(timestamp):
+    return datetime.fromtimestamp(timestamp) + timedelta(hours=5, minutes=30)
+
+def simulate_order(symbol, candle, order_type):
+    """
+    Simulate placing an order and track the result.
+    """
+    entry_price = candle[2] if order_type == 1 else candle[3]  # Buy at high, sell at low
+    stop_loss = candle[3] if order_type == 1 else candle[2]    # SL at low for buy, high for sell
+
+    # Check if the stop loss would be hit in the next candle
+    next_candle_open = candle[1]
+
+    if (order_type == 1 and next_candle_open <= stop_loss) or (order_type == -1 and next_candle_open >= stop_loss):
+        result = "Stop Loss Hit"
+        final_price = stop_loss
+    else:
+        result = "Profit"
+        final_price = next_candle_open
+
+    backtest_results.append({
+        "symbol": symbol,
+        "entry_time": convert_to_ist(candle[0]),
+        "entry_price": entry_price,
+        "exit_price": final_price,
+        "stop_loss": stop_loss,
+        "result": result,
+        "order_type": "Buy" if order_type == 1 else "Sell"
+    })
+
+def fetch_data_in_chunks(symbol, start_date, end_date):
+    """
+    Fetch historical data in chunks of 100 days to avoid API restrictions.
+    """
+    data = []
+    current_start = start_date
+    while current_start < end_date:
+        current_end = min(current_start + timedelta(days=100), end_date)
+        data_chunk = {
+            "symbol": symbol,
+            "resolution": "5",  # 5-minute time frame
+            "date_format": "0",
+            "range_from": str(int(time.mktime(current_start.timetuple()))),  # Start date in UTC
+            "range_to": str(int(time.mktime(current_end.timetuple()))),  # End date in UTC
+            "cont_flag": "1"
+        }
+        response = fyers.history(data=data_chunk)
+
+        if response['s'] == 'ok' and 'candles' in response:
+            data.extend(response['candles'])
+        else:
+            print(f"Failed to fetch data for {symbol}: {response}")
+
+        # Move to the next chunk
+        current_start = current_end + timedelta(seconds=1)
+
+    return data
+
+def backtest_strategy(symbol, start_date, end_date):
+    candles = fetch_data_in_chunks(symbol, start_date, end_date)
+
+    if candles:
+        print(f"Fetched {len(candles)} candles for {symbol}")
+        for i in range(1, len(candles)):
+            candle = candles[i]
+            open_price = candle[1]
+            high_price = candle[2]
+            low_price = candle[3]
+            close_price = candle[4]
+            candle_time_ist = convert_to_ist(candle[0])
+
+            # Exclude 9:15-9:20 AM candle if needed
+            if not (candle_time_ist.hour == 9 and 15 <= candle_time_ist.minute < 20):
+                # Determine candle color and simulate order
+                if close_price > open_price:
+                    simulate_order(symbol, candle, 1)
+                elif close_price < open_price:
+                    simulate_order(symbol, candle, -1)
+
+# Define backtest period
+start_date = datetime(2024, 1, 1)
+end_date = datetime(2024, 8, 28)
+
+# Run backtest for each symbol
+for symbol in nifty_50_symbols:
+    backtest_strategy(symbol, start_date, end_date)
+
+# Output backtest results
+if backtest_results:
+    for result in backtest_results:
+        print(result)
+else:
+    print("No trades were recorded during the backtest.")
+
+
+# Backtest to provide overall summary of the test 
+import numpy as np
+
+def date_to_epoch(date_str):
+    """Convert date string to epoch timestamp."""
+    return int(time.mktime(pd.to_datetime(date_str).timetuple()))
+
+def fetch_data(symbol, start_date, end_date, resolution='5'):
+    """Fetch historical data from Fyers API."""
+    data = {
+        "symbol": symbol,
+        "resolution": resolution,
+        "date_format": "0",
+        "range_from": date_to_epoch(start_date),
+        "range_to": date_to_epoch(end_date),
+        "cont_flag": "1"
+    }
+    try:
+        response = fyers.history(data=data)
+        if response['s'] == 'ok':
+            df = pd.DataFrame(response['candles'], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+            df.set_index('timestamp', inplace=True)
+            return df
+        else:
+            print(f"API Response: {response}")
+            raise Exception(f"API Error: {response.get('message', 'Unknown error')}")
+    except Exception as e:
+        print(f"Error fetching data for {symbol}: {e}")
+        return pd.DataFrame()
+
+def trailing_stop_loss_strategy(df):
+    """Apply trailing stop loss strategy."""
+    if df.empty:
+        return df
+
+    # Initialize columns
+    df['trail_stop'] = np.nan
+    df['position'] = None
+    df['stop_loss'] = np.nan
+    df['trade_result'] = np.nan
+
+    in_position = False
+    entry_price = 0
+    stop_loss = 0
+
+    for i in range(len(df)):
+        if not in_position:
+            if df['close'].iloc[i] > df['open'].iloc[i]:
+                entry_price = df['high'].iloc[i]
+                stop_loss = df['low'].iloc[i]
+                in_position = True
+                df.at[df.index[i], 'position'] = 'Buy'
+                df.at[df.index[i], 'stop_loss'] = stop_loss
+        else:
+            stop_loss = max(stop_loss, df['low'].iloc[i])
+            df.at[df.index[i], 'stop_loss'] = stop_loss
+
+            if df['low'].iloc[i] <= stop_loss:
+                df.at[df.index[i], 'position'] = 'Sell'
+                df.at[df.index[i], 'trade_result'] = df['close'].iloc[i] - entry_price
+                in_position = False
+
+    return df
+
+def backtest_strategy(symbol):
+    """Backtest strategy for a single stock."""
+    end_date = pd.to_datetime('today').strftime('%Y-%m-%d')
+    start_date = (pd.to_datetime('today') - pd.DateOffset(days=100)).strftime('%Y-%m-%d')
+
+    df = fetch_data(symbol, start_date, end_date)
+    if df.empty:
+        return {
+            'symbol': symbol,
+            'total_trades': 0,
+            'total_buy_orders': 0,
+            'total_sell_orders': 0,
+            'total_stop_loss_hit': 0,
+            'total_profit': 0,
+            'total_pnl': 0
+        }
+
+    df = trailing_stop_loss_strategy(df)
+
+    total_trades = len(df[df['position'].notna()])
+    total_buy_orders = len(df[df['position'] == 'Buy'])
+    total_sell_orders = len(df[df['position'] == 'Sell'])
+    total_stop_loss_hit = len(df[df['trade_result'].notna()])
+    total_profit = df['trade_result'].sum() if df['trade_result'].notna().any() else 0
+
+    return {
+        'symbol': symbol,
+        'total_trades': total_trades,
+        'total_buy_orders': total_buy_orders,
+        'total_sell_orders': total_sell_orders,
+        'total_stop_loss_hit': total_stop_loss_hit,
+        'total_profit': total_profit,
+        'total_pnl': total_profit
+    }
+
+def run_backtest():
+    """Run backtest for all Nifty 50 stocks."""
+    results = []
+    for symbol in nifty_50_symbols:
+        print(f"Backtesting {symbol}...")
+        result = backtest_strategy(symbol)
+        results.append(result)
+
+    df_results = pd.DataFrame(results)
+
+    # Ensure that 'total_trades' exists in the results DataFrame
+    if 'total_trades' not in df_results.columns:
+        df_results['total_trades'] = 0
+    if 'total_buy_orders' not in df_results.columns:
+        df_results['total_buy_orders'] = 0
+    if 'total_sell_orders' not in df_results.columns:
+        df_results['total_sell_orders'] = 0
+    if 'total_stop_loss_hit' not in df_results.columns:
+        df_results['total_stop_loss_hit'] = 0
+    if 'total_profit' not in df_results.columns:
+        df_results['total_profit'] = 0
+    if 'total_pnl' not in df_results.columns:
+        df_results['total_pnl'] = 0
+
+    total_summary = {
+        'Total Trades': df_results['total_trades'].sum(),
+        'Total Buy Orders': df_results['total_buy_orders'].sum(),
+        'Total Sell Orders': df_results['total_sell_orders'].sum(),
+        'Total Stop Loss Hit': df_results['total_stop_loss_hit'].sum(),
+        'Total Profit': df_results['total_profit'].sum(),
+        'Total PnL': df_results['total_pnl'].sum()
+    }
+
+    return df_results, total_summary
+
+# Run backtest
+df_results, total_summary = run_backtest()
+
+# Print results
+print(df_results)
+print("\n--- Overall Summary ---")
+print(total_summary)
+
+# Backtest to provide overall summary of the result 
+def fetch_daily_data(symbol, from_time, to_time):
+    """Fetch daily data for a specific symbol between the given time range."""
+    data = {
+        "symbol": symbol,
+        "resolution": "D",  # Daily resolution
+        "date_format": "0",
+        "range_from": from_time,
+        "range_to": to_time,
+        "cont_flag": "1"
+    }
+    try:
+        response = fyers.history(data=data)
+        if response['s'] == 'ok':
+            return response['candles']
+        else:
+            raise ValueError(f"Error fetching data for {symbol}: {response}")
+    except Exception as e:
+        raise ValueError(f"Error fetching data for {symbol}: {e}")
+
+def simulate_trading(candles):
+    """Simulate trading based on the strategy."""
+    trades = []
+    in_position = False
+    buy_price = None
+    stop_loss = None
+
+    for i in range(len(candles) - 1):
+        current_candle = candles[i]
+        next_candle = candles[i + 1]
+
+        timestamp = datetime.fromtimestamp(current_candle[0])
+        day_of_week = timestamp.weekday()
+
+        if day_of_week == 0:  # Monday, update stop loss
+            if in_position:
+                stop_loss = min(stop_loss, next_candle[3])  # Trail SL to low of next candle
+
+        if not in_position:
+            if current_candle[4] > current_candle[1]:  # Green candle
+                buy_price = current_candle[2]
+                stop_loss = current_candle[3]
+                in_position = True
+                trades.append({
+                    'buy_date': timestamp,
+                    'buy_price': buy_price,
+                    'stop_loss': stop_loss,
+                    'status': 'open'
+                })
+
+        if in_position:
+            if next_candle[3] <= stop_loss:  # Stop loss hit
+                trades[-1]['sell_date'] = datetime.fromtimestamp(next_candle[0])
+                trades[-1]['sell_price'] = stop_loss
+                trades[-1]['status'] = 'closed'
+                in_position = False
+
+    return trades
+
+def calculate_profit(trades):
+    """Calculate profit or loss for each trade."""
+    total_profit = 0
+    for trade in trades:
+        if trade['status'] == 'closed':
+            profit = (trade['sell_price'] - trade['buy_price']) / trade['buy_price'] * 100
+            total_profit += profit
+            print(f"Buy Date: {trade['buy_date']}, Buy Price: {trade['buy_price']:.2f}")
+            print(f"Sell Date: {trade['sell_date']}, Sell Price: {trade['sell_price']:.2f}")
+            print(f"Profit/Loss: {profit:.2f}%")
+            print("="*50)
+    print(f"Total Profit/Loss: {total_profit:.2f}%")
+
+def process_symbol(symbol):
+    """Process each symbol to backtest the trading strategy."""
+    try:
+        # Get current date and define the range for the past year
+        today = datetime.now().date()
+        one_year_ago = today - timedelta(days=365)
+        start_time = int(time.mktime(one_year_ago.timetuple()))
+        end_time = int(time.mktime(today.timetuple()))
+
+        # Fetch daily data for the past year
+        data = fetch_daily_data(symbol, start_time, end_time)
+
+        # Simulate trading
+        trades = simulate_trading(data)
+
+        # Calculate and display profit/loss
+        calculate_profit(trades)
+
+    except ValueError as e:
+        print(e)
+
+# Loop through all Nifty 50 symbols and backtest each one
+for symbol in nifty_50_symbols:
+    print(f"Backtesting {symbol}...")
+    process_symbol(symbol)
+
+# Backtest on weekly Analysis 
+def fetch_daily_data(symbol, from_time, to_time):
+    """Fetch daily data for a specific symbol between the given time range."""
+    data = {
+        "symbol": symbol,
+        "resolution": "D",  # Daily resolution
+        "date_format": "0",
+        "range_from": from_time,
+        "range_to": to_time,
+        "cont_flag": "1"
+    }
+    try:
+        response = fyers.history(data=data)
+        if response['s'] == 'ok':
+            return response['candles']
+        else:
+            raise ValueError(f"Error fetching data for {symbol}: {response}")
+    except Exception as e:
+        raise ValueError(f"Error fetching data for {symbol}: {e}")
+
+def aggregate_weekly_data(daily_data):
+    """Aggregate daily data into weekly data and find highest weekly volume."""
+    weekly_volumes = defaultdict(float)
+    if not daily_data:
+        return weekly_volumes
+
+    week_start = None
+    week_end = None
+    volume_of_week = 0
+
+    for candle in daily_data:
+        timestamp = datetime.fromtimestamp(candle[0])
+        year, week, _ = timestamp.isocalendar()
+
+        if week_start is None or timestamp >= week_end:
+            if week_start is not None:
+                weekly_volumes[(year, week)] = max(weekly_volumes.get((year, week), 0), volume_of_week)
+            week_start = timestamp
+            week_end = week_start + timedelta(days=6)
+            volume_of_week = candle[5]
+        else:
+            volume_of_week += candle[5]
+
+    if week_start is not None:
+        weekly_volumes[(year, week)] = max(weekly_volumes.get((year, week), 0), volume_of_week)
+
+    return weekly_volumes
+
+def find_highest_weekly_volume(weekly_volumes):
+    """Find the highest weekly volume."""
+    highest_volume = 0
+    for volume in weekly_volumes.values():
+        if volume > highest_volume:
+            highest_volume = volume
+    return highest_volume
+
+def process_symbol(symbol):
+    """Process each symbol to find and compare highest weekly volumes."""
+    try:
+        # Define the range for the current year and last year
+        today = datetime.now().date()
+        one_year_ago = today - timedelta(days=730)
+        start_time_current = int(time.mktime(datetime(today.year, 1, 1).timetuple()))
+        end_time_current = int(time.mktime(datetime(today.year, 12, 31, 23, 59, 59).timetuple()))
+        start_time_last_year = int(time.mktime(datetime(one_year_ago.year, 1, 1).timetuple()))
+        end_time_last_year = int(time.mktime(datetime(one_year_ago.year, 12, 31, 23, 59, 59).timetuple()))
+
+        # Fetch daily data for both years
+        current_year_data = fetch_daily_data(symbol, start_time_current, end_time_current)
+        last_year_data = fetch_daily_data(symbol, start_time_last_year, end_time_last_year)
+
+        # Aggregate data to weekly volumes
+        current_year_weekly_data = aggregate_weekly_data(current_year_data)
+        last_year_weekly_data = aggregate_weekly_data(last_year_data)
+
+        # Find highest weekly volume
+        highest_current_year_volume = find_highest_weekly_volume(current_year_weekly_data)
+        highest_last_year_volume = find_highest_weekly_volume(last_year_weekly_data)
+
+        # Print results
+        print(f"Symbol: {symbol}")
+        print(f"Highest Weekly Volume This Year: {highest_current_year_volume:.2f}")
+        print(f"Highest Weekly Volume Last Year: {highest_last_year_volume:.2f}")
+        print("="*50)
+
+    except ValueError as e:
+        print(e)
+
+# Loop through all Nifty 50 symbols and process each one
+for symbol in nifty_50_symbols:
+    print(f"Processing {symbol}...")
+    process_symbol(symbol)
